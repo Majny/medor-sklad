@@ -1,0 +1,22 @@
+@host = http://localhost:5033
+
+### Možnosti filtru
+GET {{host}}/api/filters
+
+### Celý grid
+GET {{host}}/api/stock
+
+### Grid filtrovaný na dva klienty a jednu kategorii
+GET {{host}}/api/stock?clientIds=1&clientIds=3&categoryIds=1
+
+### Změna počtu kusů
+PUT {{host}}/api/stock/1/1
+Content-Type: application/json
+
+{ "quantity": 42 }
+
+### Neplatná změna (záporný počet) -> 400
+PUT {{host}}/api/stock/1/1
+Content-Type: application/json
+
+{ "quantity": -5 }

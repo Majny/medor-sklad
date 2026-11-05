@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MedorSklad/MedorSklad.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MedorSklad.Tests/MedorSklad.Tests.csproj" />
+  </Folder>
+</Solution>
