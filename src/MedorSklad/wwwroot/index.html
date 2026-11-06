@@ -4,60 +4,63 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Správa skladu</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="css/app.css">
+    <script type="module" src="js/main.js"></script>
 </head>
 <body>
 <header class="topbar">
-    <h1>Správa skladu</h1>
+    <div>
+        <h1>Správa skladu</h1>
+        <p class="subtitle">Počty kusů podle klientů a produktů</p>
+    </div>
+    <span id="save-status" class="save-status">Vše uloženo</span>
 </header>
 
 <div class="layout">
-    <aside class="filter" aria-label="Filtr gridu">
-        <div class="filter-head">
-            <h2>Filtr</h2>
-            <button type="button" id="reset-filter" class="link">Zrušit filtr</button>
+    <aside id="filters" class="sidebar" aria-labelledby="filter-title">
+        <div class="sidebar-head">
+            <h2 id="filter-title">Filtr</h2>
+            <button type="button" id="reset-filter" class="link" hidden>Zrušit filtr</button>
         </div>
-        <p class="hint">Nic nevybráno = zobrazit vše.</p>
-
-        <fieldset class="filter-group" data-key="clientIds">
-            <legend>Klienti <span class="count"></span></legend>
-            <div class="options" id="clients"></div>
-        </fieldset>
-
-        <fieldset class="filter-group" data-key="categoryIds">
-            <legend>Kategorie <span class="count"></span></legend>
-            <div class="options" id="categories"></div>
-        </fieldset>
-
-        <fieldset class="filter-group" data-key="productIds">
-            <legend>Produkty <span class="count"></span></legend>
-            <input type="search" id="product-search" placeholder="Hledat produkt…" aria-label="Hledat produkt">
-            <div class="options" id="products"></div>
-        </fieldset>
+        <p class="hint">Bez výběru se skupina neomezuje. Skupiny se kombinují.</p>
+        <label class="switch">
+            <input type="checkbox" id="only-zero" disabled>
+            <span>Jen nulové stavy</span>
+        </label>
+        <div id="filter-groups"><p class="muted">Načítám filtr…</p></div>
     </aside>
 
     <main class="content">
-        <div class="toolbar">
-            <span id="row-count"></span>
-            <span class="messages">
-                <span id="status" role="status" aria-live="polite"></span>
-                <span id="error" role="alert"></span>
-            </span>
-        </div>
-        <table class="grid">
+        <p id="summary" class="summary"></p>
+        <table id="grid" class="grid" aria-describedby="summary">
+            <caption class="sr-only">Stav skladu, šipkami nahoru a dolů se přechází mezi řádky</caption>
             <thead>
             <tr>
-                <th>Klient</th>
-                <th>Kategorie produktu</th>
-                <th>Produkt</th>
-                <th class="num">Počet kusů</th>
+                <th scope="col" data-sort="client"><button type="button" data-sort="client">Klient</button></th>
+                <th scope="col" data-sort="categories"><button type="button" data-sort="categories">Kategorie produktu</button></th>
+                <th scope="col" data-sort="product"><button type="button" data-sort="product">Produkt</button></th>
+                <th scope="col" data-sort="quantity" class="num"><button type="button" data-sort="quantity">Počet kusů</button></th>
             </tr>
             </thead>
-            <tbody id="grid-body"></tbody>
+            <tbody></tbody>
         </table>
     </main>
 </div>
 
-<script src="app.js"></script>
+<div id="status" class="sr-only" role="status"></div>
+<div id="alert" class="sr-only" role="alert"></div>
+
+<template id="filter-group-template">
+    <fieldset class="filter-group">
+        <legend><span class="group-title"></span> <span class="count"></span></legend>
+        <div class="group-tools">
+            <input type="search" class="group-search" autocomplete="off">
+            <button type="button" class="link toggle-all">Vybrat vše</button>
+        </div>
+        <div class="options"></div>
+        <p class="no-match muted" hidden>Nic neodpovídá hledání.</p>
+        <button type="button" class="link show-others" hidden></button>
+    </fieldset>
+</template>
 </body>
 </html>
