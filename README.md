@@ -111,11 +111,12 @@ tests/MedorSklad.Tests/
   ApiTests           REST API přes celou aplikaci (WebApplicationFactory)
   DataTests          migrace a seed
   SiteTests          stránka a moduly se servírují, nic se nenačítá z cizích serverů
+  SecurityTests      bezpečnostní hlavičky (CSP, nosniff), 413 pro příliš velké tělo bez interních detailů
 ```
 
 ## Vědomě vynecháno
 
-- Přihlašování a role.
+- Přihlašování a role. API je bez autentizace a `clientId` v URL se neověřuje, kdokoli s přístupem na port tedy může měnit stav libovolného klienta. Proto aplikace poslouchá jen na localhost a `AllowedHosts` povoluje jen localhost (brání DNS rebindingu). Před nasazením by přibylo přihlášení, kontrola oprávnění ke klientovi v `PUT /api/stock/{clientId}/...` a HTTPS.
 - Správa klientů, kategorií a produktů (data jsou ze seedu).
 - Historie změn (audit).
 - Stránkování.

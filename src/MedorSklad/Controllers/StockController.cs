@@ -36,6 +36,8 @@ public class StockController(StockService stockService) : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge)]
+    [RequestSizeLimit(16_384)] // tělo je jen {quantity, version}, větší požadavek skončí 413
     public async Task<ActionResult<StockRow>> UpdateQuantity(
         int clientId, int productId, UpdateQuantityRequest request, CancellationToken ct)
     {

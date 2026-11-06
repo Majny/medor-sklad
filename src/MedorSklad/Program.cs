@@ -5,6 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 
 // Relativní cestu k SQLite souboru vztáhneme ke ContentRoot, aby DB vznikla vždy v src/MedorSklad.
 var connection = new SqliteConnectionStringBuilder(builder.Configuration.GetConnectionString("Warehouse"));
@@ -27,7 +28,30 @@ var app = builder.Build();
 await using (var scope = app.Services.CreateAsyncScope())
     await scope.ServiceProvider.GetRequiredService<WarehouseDbContext>().Database.MigrateAsync();
 
-app.UseExceptionHandler();
+// Bezpečnostní hlavičky pro všechny odpovědi. Frontend nemá inline skripty ani styly a nic nenačítá
+// z cizích serverů, takže stačí 'self'. frame-ancestors 'none' brání vložení gridu do cizí stránky.
+// Nastavuje se přes OnStarting, aby hlavičky přežily i Response.Clear() v exception handleru.
+app.Use((context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var headers = context.Response.Headers;
+        headers.ContentSecurityPolicy =
+            "default-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+        headers.XContentTypeOptions = "nosniff";
+        headers["Referrer-Policy"] = "no-referrer";
+        return Task.CompletedTask;
+    });
+    return next(context);
+});
+
+// Chyby klienta, které vyhodí Kestrel (např. příliš velké tělo, 413), vracíme s jejich kódem, ne jako 500,
+// a nelogujeme je jako chybu serveru.
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    StatusCodeSelector = ex => ex is BadHttpRequestException bad ? bad.StatusCode : StatusCodes.Status500InternalServerError,
+    SuppressDiagnosticsCallback = c => c.Exception is BadHttpRequestException,
+});
 app.UseStatusCodePages();
 app.UseDefaultFiles();
 app.UseStaticFiles();
