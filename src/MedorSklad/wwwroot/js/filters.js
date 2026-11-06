@@ -1,6 +1,7 @@
 // @ts-check
 // Postranní filtr: tři skupiny zaškrtávátek s hledáním a kaskádou, přepínač nulových stavů a zrušení filtru.
 
+import { element } from "./dom.js";
 import { createGroup } from "./filter-group.js";
 
 /**
@@ -55,6 +56,7 @@ export function isFilterActive(state) {
 export function createFilters(sidebar, options, state, onChange) {
     const onlyZero = /** @type {HTMLInputElement} */ (sidebar.querySelector("#only-zero"));
     const resetButton = /** @type {HTMLButtonElement} */ (sidebar.querySelector("#reset-filter"));
+    const activeCount = /** @type {HTMLElement} */ (sidebar.querySelector("#filter-active-count"));
     const changed = () => { update(); onChange(); };
 
     // Neznámá id (např. ze starého odkazu) zahodíme, jinak by tiše vyprázdnila grid.
@@ -75,6 +77,14 @@ export function createFilters(sidebar, options, state, onChange) {
         groups.forEach(group => group.update(group.key === "clientIds" ? null : scope[group.key]));
         onlyZero.checked = state.onlyOutOfStock;
         resetButton.hidden = !isFilterActive(state);
+        // Počet aktivních omezení v sbaleném filtru na úzkém okně.
+        const active = state.clientIds.length + state.categoryIds.length + state.productIds.length + (state.onlyOutOfStock ? 1 : 0);
+        activeCount.replaceChildren();
+        if (active > 0) {
+            const pill = element("span", "pill", String(active));
+            pill.append(element("span", "sr-only", " aktivní"));
+            activeCount.append(pill);
+        }
     }
 
     function reset() {

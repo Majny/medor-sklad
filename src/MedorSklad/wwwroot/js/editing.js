@@ -10,7 +10,7 @@ import { createRowSaver, pendingCount } from "./row-saver.js";
 /** @typedef {"dirty" | "invalid" | "saving" | "saved" | "error" | "conflict"} EditorState */
 
 const MAX_QUANTITY = 1_000_000;
-const INVALID_HINT = "Zadejte celé číslo 0 až 1 000 000";
+const INVALID_HINT = `Celé číslo 0 až ${formatNumber(MAX_QUANTITY)}`;
 const SAVED_MARK_MS = 1500;
 const STATES = ["dirty", "invalid", "saving", "saved", "error", "conflict"];
 
@@ -44,7 +44,7 @@ export function createQuantityEditor(row, handlers) {
     mark.setAttribute("aria-hidden", "true");
     const message = element("div", "qty-message");
     message.id = `qty-message-${row.clientId}-${row.productId}`;
-    input.setAttribute("aria-describedby", message.id);
+    input.setAttribute("aria-describedby", `${message.id} kbd-hint`);
     const controls = element("div", "qty-controls");
     controls.append(stepButton("−", "Snížit o 1", -1), input, stepButton("+", "Zvýšit o 1", 1), mark);
     const root = element("div", "qty-editor");
@@ -65,6 +65,7 @@ export function createQuantityEditor(row, handlers) {
         mark.textContent = state === "saved" ? "✓" : "";
         clearTimeout(savedTimer);
         if (state === "saved") savedTimer = window.setTimeout(() => setState(null), SAVED_MARK_MS);
+        root.dispatchEvent(new Event("editorstate", { bubbles: true })); // main.js podle toho přepočítá stav ukládání
     }
     const is = (/** @type {EditorState} */ state) => root.classList.contains(state);
     const showMessage = (/** @type {(string | Node)[]} */ ...content) => message.replaceChildren(...content);
@@ -127,9 +128,13 @@ export function createQuantityEditor(row, handlers) {
         const panel = element("div", "conflict-panel");
         const actions = element("div", "conflict-actions");
         actions.append(
-            button(`Použít ${formatNumber(current)}`, choose(current)),
-            button(`Přepsat na ${formatNumber(mine)}`, choose(mine)));
-        panel.append(element("p", "", `Mezitím změněno na ${formatNumber(current)} ks. Vaše hodnota ${formatNumber(mine)} nebyla uložena.`), actions);
+            button(`Použít ${formatNumber(current)}`, choose(current), "primary"),
+            button(`Přepsat na ${formatNumber(mine)}`, choose(mine), "secondary"),
+            element("span", "conflict-hint", `Esc použije ${formatNumber(current)}`));
+        const text = element("p");
+        text.append("Někdo mezitím uložil ", element("b", "", formatNumber(current)), " ks. Vaše hodnota ",
+            element("b", "", formatNumber(mine)), " se neuložila.");
+        panel.append(text, actions);
         setState("conflict");
         showMessage(panel);
         handlers.announce(`Konflikt u položky ${label}: mezitím změněno na ${formatNumber(current)} ks.`, true);

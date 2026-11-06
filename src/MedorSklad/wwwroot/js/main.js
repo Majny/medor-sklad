@@ -7,20 +7,25 @@ import { hasUnsavedWork } from "./editing.js";
 import { createFilters, isFilterActive } from "./filters.js";
 import { debounce, plural } from "./format.js";
 import { createGrid } from "./grid.js";
-import { onPendingChange, savesStarted, whenSaved } from "./row-saver.js";
+import { onPendingChange, pendingCount, savesStarted, whenSaved } from "./row-saver.js";
 import { readState, writeState } from "./url-state.js";
 
 const byId = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
 const state = readState();
-const saveStatus = byId("save-status");
+const saveStatus = /** @type {HTMLButtonElement} */ (byId("save-status"));
+const gridTable = /** @type {HTMLTableElement} */ (byId("grid"));
 
 /** @type {{ update: () => void, reset: () => void } | null} */
 let filters = null;
 /** @type {AbortController | null} */
 let loading = null;
+/** První načtení gridu se neoznamuje, další (po změně filtru) ano. */
+let loadedOnce = false;
+/** Stav "Vše uloženo" ukážeme až po prvním uložení, do té doby by nic neříkal. */
+let savedOnce = false;
 
-const grid = createGrid(/** @type {HTMLTableElement} */ (byId("grid")), byId("summary"), {
+const grid = createGrid(gridTable, byId("summary"), {
     onSort: key => {
         const dir = state.sort.key === key && state.sort.dir === "asc" ? "desc" : "asc";
         state.sort = { key, dir };
@@ -33,10 +38,39 @@ const grid = createGrid(/** @type {HTMLTableElement} */ (byId("grid")), byId("su
     announce,
 });
 
-onPendingChange(count => {
-    saveStatus.textContent = count === 0 ? "Vše uloženo" : `Ukládám ${plural(count, ["změnu", "změny", "změn"])}`;
-    saveStatus.classList.toggle("busy", count > 0);
+const problemEditors = () => /** @type {HTMLElement[]} */ ([...document.querySelectorAll(".qty-editor:is(.invalid, .error, .conflict)")]);
+
+/**
+ * Stav ukládání v hlavičce: ukládá se, neuložené problémy (klik přejde na první z nich),
+ * "Vše uloženo" po aspoň jednom uložení, jinak skryto.
+ */
+function refreshSaveStatus() {
+    const saving = pendingCount();
+    const problems = problemEditors().length;
+    if (saving > 0) savedOnce = true;
+    saveStatus.classList.toggle("busy", saving > 0);
+    saveStatus.classList.toggle("problem", saving === 0 && problems > 0);
+    saveStatus.disabled = !(saving === 0 && problems > 0);
+    saveStatus.hidden = saving === 0 && problems === 0 && !savedOnce;
+    saveStatus.textContent = saving > 0 ? `Ukládám ${plural(saving, ["změnu", "změny", "změn"])}`
+        : problems > 0 ? `Neuloženo: ${plural(problems, ["položka", "položky", "položek"])}`
+        : "Vše uloženo";
+}
+
+saveStatus.addEventListener("click", () => {
+    const first = problemEditors()[0];
+    if (!first) return;
+    first.closest("tr")?.scrollIntoView({ block: "center" });
+    /** @type {HTMLInputElement | null} */ (first.querySelector("input.qty"))?.focus();
 });
+onPendingChange(refreshSaveStatus);
+gridTable.addEventListener("editorstate", refreshSaveStatus);
+
+// Na úzkém okně je filtr sbalený, na širokém vždy otevřený.
+const narrow = matchMedia("(max-width: 860px)");
+const filterPanel = /** @type {HTMLDetailsElement} */ (byId("filter-panel"));
+filterPanel.open = !narrow.matches;
+narrow.addEventListener("change", event => (filterPanel.open = !event.matches));
 
 /** Každá změna filtru: hned adresa a filtr, grid až po 250 ms klidu. */
 function onFilterChange() {
@@ -69,7 +103,13 @@ async function loadGrid() {
             if (controller.signal.aborted) return;
             const savesBefore = savesStarted();
             const rows = await getStock(state, controller.signal);
-            if (savesStarted() === savesBefore) { grid.setRows(rows); return; }
+            if (savesStarted() === savesBefore) {
+                grid.setRows(rows);
+                refreshSaveStatus();
+                if (loadedOnce) announce(`Zobrazeno ${plural(rows.length, ["položka", "položky", "položek"])}`, false);
+                loadedOnce = true;
+                return;
+            }
         }
     } catch (error) {
         if (controller.signal.aborted) return;

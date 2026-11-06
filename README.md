@@ -29,7 +29,7 @@ Příklady volání API jsou v `src/MedorSklad/MedorSklad.http`, popis API v Ope
 - Řazení podle libovolného sloupce (české řazení), souhrn řádků a kusů, zvýraznění vyprodaných a docházejících položek.
 - Editace počtu kusů přímo v gridu jako v tabulce: Enter uloží a skočí na další řádek, šipky přecházejí mezi řádky, Esc vrátí poslední potvrzenou hodnotu, tlačítka − a + mění o 1.
 - Ochrana proti přepsání cizí změny: když řádek mezitím změnil někdo jiný, uložení se odmítne a u buňky se nabídne převzít aktuální hodnotu, nebo vědomě přepsat. Zadání jiné hodnoty se bere jako vědomé přepsání. Vyzkoušet jde ve dvou záložkách prohlížeče.
-- Přepínač "Jen nulové stavy" pro rychlý přehled vyprodaného.
+- Přepínač "Jen vyprodané" pro rychlý přehled vyprodaného.
 
 ## Doménový model
 

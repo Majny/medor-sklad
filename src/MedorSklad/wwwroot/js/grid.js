@@ -47,6 +47,9 @@ export function createGrid(table, summary, handlers) {
     /** @type {Sort} */
     let sort = { key: "client", dir: "asc" };
     let hasData = false;
+    // Nápověda ke klávesnici: viditelná v souhrnu a zároveň popis (aria-describedby) každého pole.
+    const keyboardHint = element("span", "summary-hint", "Enter uloží a přejde dál, Esc vrátí hodnotu");
+    keyboardHint.id = "kbd-hint";
 
     for (const header of table.querySelectorAll("thead button[data-sort]")) {
         header.addEventListener("click", () => handlers.onSort(/** @type {SortKey} */ (/** @type {HTMLElement} */ (header).dataset.sort)));
@@ -61,10 +64,11 @@ export function createGrid(table, summary, handlers) {
     function showError(message) {
         hasData = false;
         table.removeAttribute("aria-busy");
-        summary.textContent = "";
-        const text = element("p", "", `Data se nepodařilo načíst. ${message}`);
-        text.setAttribute("role", "alert");
-        body.replaceChildren(messageRow(text, button("Zkusit znovu", handlers.onRetry, "secondary")));
+        rows = [];
+        renderSummary();
+        const title = element("p", "state-title", "Data se nepodařilo načíst.");
+        title.setAttribute("role", "alert");
+        body.replaceChildren(messageRow(title, element("p", "", message), button("Zkusit znovu", handlers.onRetry, "secondary")));
     }
 
     /** @param {StockRow[]} newRows v pořadí ze serveru */
@@ -75,8 +79,12 @@ export function createGrid(table, summary, handlers) {
         hasData = rows.length > 0;
         table.removeAttribute("aria-busy");
         if (hasData) applySort();
-        else if (handlers.canReset()) body.replaceChildren(messageRow("Filtru neodpovídá žádná položka.", button("Zrušit filtr", handlers.onReset, "secondary")));
-        else body.replaceChildren(messageRow("Sklad je prázdný."));
+        else if (handlers.canReset()) {
+            body.replaceChildren(messageRow(
+                element("p", "state-title", "Filtru neodpovídá žádná položka."),
+                element("p", "", "Zkuste zrušit část výběru."),
+                button("Zrušit filtr", handlers.onReset, "secondary")));
+        } else body.replaceChildren(messageRow(element("p", "state-title", "Sklad je prázdný.")));
         renderSummary();
     }
 
@@ -110,12 +118,22 @@ export function createGrid(table, summary, handlers) {
         renderSummary();
     }
 
+    /** Souhrn jako dvojice číslo + popis; "vyprodáno" a "dochází" slouží i jako legenda odznaků. */
     function renderSummary() {
+        summary.hidden = rows.length === 0;
+        if (rows.length === 0) { summary.replaceChildren(); return; }
         const clients = new Set(rows.map(row => row.clientId)).size;
         const total = rows.reduce((sum, row) => sum + row.quantity, 0);
         const soldOut = rows.filter(row => row.quantity === 0).length;
-        summary.textContent = `${plural(rows.length, ["řádek", "řádky", "řádků"])}, ${plural(clients, ["klient", "klienti", "klientů"])}, celkem ${formatNumber(total)} ks`
-            + (soldOut > 0 ? `, vyprodáno ${formatNumber(soldOut)}` : "");
+        const low = rows.filter(row => isLow(row.quantity)).length;
+        const stats = [
+            stat("stat", ...countWithNoun(rows.length, ["položka", "položky", "položek"])),
+            stat("stat", ...countWithNoun(clients, ["klient", "klienti", "klientů"])),
+        ];
+        if (total > 0) stats.push(stat("stat", "celkem ", bold(total), " ks"));
+        if (soldOut > 0) stats.push(stat("stat stat-zero", "vyprodáno ", bold(soldOut)));
+        if (low > 0) stats.push(stat("stat stat-low", "dochází ", bold(low)));
+        summary.replaceChildren(...stats, keyboardHint);
     }
 
     return { showLoading, showError, setRows, setSort, refreshRow };
@@ -130,9 +148,10 @@ function buildRow(row, editorHandlers) {
     const client = element("td", "client");
     client.append(element("span", "client-name", row.clientName));
     const categories = element("td", "categories");
-    categories.append(...row.categories.map(name => element("span", "chip", name)));
+    categories.textContent = row.categories.join(", ");
     const product = element("td", "product");
-    product.append(element("span", "", row.productName), element("span", "badge-zero", "Vyprodáno"));
+    product.append(element("span", "", row.productName), element("span", "badge-zero", "Vyprodáno"), element("span", "badge-low", "Dochází"),
+        element("span", "product-cats", row.categories.join(", "))); // v úzkém okně místo sloupce Kategorie
     const quantity = element("td", "num");
     quantity.append(createQuantityEditor(row, editorHandlers));
     tr.append(client, categories, product, quantity);
@@ -140,18 +159,48 @@ function buildRow(row, editorHandlers) {
     return tr;
 }
 
-/** Nula = červený odznak "Vyprodáno", méně než 10 kusů = jantarový podklad. */
+const isLow = (/** @type {number} */ quantity) => quantity > 0 && quantity < LOW_STOCK;
+
+/** Nula = červený odznak "Vyprodáno", méně než 10 kusů = jantarový odznak "Dochází". */
 function updateLevel(/** @type {HTMLTableRowElement} */ tr, /** @type {StockRow} */ row) {
     tr.classList.toggle("is-zero", row.quantity === 0);
-    tr.classList.toggle("is-low", row.quantity > 0 && row.quantity < LOW_STOCK);
+    tr.classList.toggle("is-low", isLow(row.quantity));
 }
 
-/** @param {(string | Node)[]} content */
+/** @param {number} value */
+function bold(value) {
+    return element("b", "", formatNumber(value));
+}
+
+/**
+ * Číslo tučně a za ním správný český tvar, například [<b>120</b>, " položek"].
+ * @param {number} count
+ * @param {[string, string, string]} forms
+ * @returns {[HTMLElement, string]}
+ */
+function countWithNoun(count, forms) {
+    const noun = plural(count, forms).slice(formatNumber(count).length);
+    return [bold(count), noun];
+}
+
+/**
+ * @param {string} className
+ * @param {(string | Node)[]} content
+ */
+function stat(className, ...content) {
+    const span = element("span", className);
+    span.append(...content);
+    return span;
+}
+
+/** Řádek přes celou tabulku pro načítání, chybu a prázdný výsledek. @param {(string | Node)[]} content */
 function messageRow(...content) {
     const tr = document.createElement("tr");
     const td = /** @type {HTMLTableCellElement} */ (element("td", "state-cell"));
     td.colSpan = 4;
-    td.append(...content);
+    const state = element("div", "state");
+    state.append(...content);
+    td.append(state);
     tr.append(td);
     return tr;
 }

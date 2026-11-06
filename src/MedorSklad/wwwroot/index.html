@@ -4,40 +4,46 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Správa skladu</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="css/app.css">
     <script type="module" src="js/main.js"></script>
 </head>
 <body>
+<a class="skip-link" href="#grid">Přejít na tabulku</a>
 <header class="topbar">
-    <div>
+    <div class="brand">
         <h1>Správa skladu</h1>
-        <p class="subtitle">Počty kusů podle klientů a produktů</p>
+        <span class="subtitle">Počty kusů podle klientů a produktů</span>
     </div>
-    <span id="save-status" class="save-status">Vše uloženo</span>
+    <button type="button" id="save-status" class="save-status" disabled hidden></button>
 </header>
 
 <div class="layout">
     <aside id="filters" class="sidebar" aria-labelledby="filter-title">
-        <div class="sidebar-head">
-            <h2 id="filter-title">Filtr</h2>
-            <button type="button" id="reset-filter" class="link" hidden>Zrušit filtr</button>
-        </div>
-        <p class="hint">Bez výběru se skupina neomezuje. Skupiny se kombinují.</p>
-        <label class="switch">
-            <input type="checkbox" id="only-zero" disabled>
-            <span>Jen nulové stavy</span>
-        </label>
-        <div id="filter-groups"><p class="muted">Načítám filtr…</p></div>
+        <details id="filter-panel" open>
+            <summary class="filter-summary">Filtr <span id="filter-active-count"></span></summary>
+            <div class="sidebar-head">
+                <h2 id="filter-title">Filtr</h2>
+                <button type="button" id="reset-filter" class="secondary small" hidden>Zrušit filtr</button>
+            </div>
+            <p class="hint">Bez výběru se zobrazí vše.</p>
+            <label class="switch">
+                <input type="checkbox" id="only-zero" disabled>
+                <span>Jen vyprodané</span>
+            </label>
+            <div id="filter-groups"><p class="muted">Načítám filtr…</p></div>
+        </details>
     </aside>
 
     <main class="content">
-        <p id="summary" class="summary"></p>
-        <table id="grid" class="grid" aria-describedby="summary">
-            <caption class="sr-only">Stav skladu, šipkami nahoru a dolů se přechází mezi řádky</caption>
+        <div id="summary" class="summary" hidden></div>
+        <table id="grid" class="grid" aria-describedby="summary" tabindex="-1">
+            <caption class="sr-only">Stav skladu</caption>
+            <colgroup><col class="c-client"><col class="c-cat"><col class="c-prod"><col class="c-qty"></colgroup>
             <thead>
             <tr>
                 <th scope="col" data-sort="client"><button type="button" data-sort="client">Klient</button></th>
-                <th scope="col" data-sort="categories"><button type="button" data-sort="categories">Kategorie produktu</button></th>
+                <th scope="col" data-sort="categories"><button type="button" data-sort="categories">Kategorie</button></th>
                 <th scope="col" data-sort="product"><button type="button" data-sort="product">Produkt</button></th>
                 <th scope="col" data-sort="quantity" class="num"><button type="button" data-sort="quantity">Počet kusů</button></th>
             </tr>
@@ -52,7 +58,7 @@
 
 <template id="filter-group-template">
     <fieldset class="filter-group">
-        <legend><span class="group-title"></span> <span class="count"></span></legend>
+        <legend><span class="group-title"></span> <span class="count" hidden></span></legend>
         <div class="group-tools">
             <input type="search" class="group-search" autocomplete="off">
             <button type="button" class="link toggle-all">Vybrat vše</button>

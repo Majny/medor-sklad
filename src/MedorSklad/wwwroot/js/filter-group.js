@@ -80,12 +80,14 @@ export function createGroup(def, items, state, changed) {
             row.label.hidden = !isSelected && !(matches && (inScope || showOthers));
         }
         const visible = visibleRows();
-        find(".count").textContent = selected.size > 0 ? `(${selected.size} vybráno)` : "";
-        toggleAll.textContent = visible.length > 0 && visible.every(r => r.checkbox.checked) ? "Zrušit" : "Vybrat vše";
+        const count = find(".count");
+        count.hidden = selected.size === 0;
+        count.replaceChildren(String(selected.size), element("span", "sr-only", " vybráno"));
+        toggleAll.textContent = visible.length > 0 && visible.every(r => r.checkbox.checked) ? "Zrušit výběr" : "Vybrat vše";
         toggleAll.disabled = visible.length === 0;
         noMatch.hidden = visible.length > 0;
         others.hidden = outside === 0;
-        others.textContent = showOthers ? `skrýt ostatní (${outside})` : `zobrazit ostatní (${outside})`;
+        others.textContent = showOthers ? `Skrýt ostatní (${outside})` : `Zobrazit ostatní (${outside})`;
         others.setAttribute("aria-expanded", String(showOthers));
     }
 
