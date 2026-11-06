@@ -40,7 +40,13 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
             e.HasKey(s => new { s.ClientId, s.ProductId });
             e.HasOne(s => s.Client).WithMany(c => c.StockItems).HasForeignKey(s => s.ClientId);
             e.HasOne(s => s.Product).WithMany().HasForeignKey(s => s.ProductId);
-            e.ToTable(t => t.HasCheckConstraint("CK_StockItems_Quantity", "Quantity >= 0"));
+            // Dnešní zápis (ExecuteUpdate) hlídá verzi sám ve WHERE; token chrání případný budoucí zápis přes SaveChanges.
+            e.Property(s => s.Version).IsConcurrencyToken();
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StockItems_Quantity", "Quantity >= 0");
+                t.HasCheckConstraint("CK_StockItems_Quantity_Max", "Quantity <= 1000000");
+            });
         });
     }
 }

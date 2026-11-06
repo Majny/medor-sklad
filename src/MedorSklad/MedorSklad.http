@@ -1,22 +1,39 @@
+# Příklady volání API. Id odpovídají deterministickému seedu
+# (klient 1 = Kancelář Plus s.r.o., produkt 2 = Bezdrátová myš, produkt 20 = Šampon).
 @host = http://localhost:5033
 
-### Možnosti filtru
+### Možnosti filtru (klienti a produkty i s id svých kategorií)
 GET {{host}}/api/filters
 
-### Celý grid
-GET {{host}}/api/stock
+### Grid filtrovaný na dva klienty a jednu kategorii, jen vyprodané položky
+GET {{host}}/api/stock?clientIds=1&clientIds=5&categoryIds=2&onlyOutOfStock=true
 
-### Grid filtrovaný na dva klienty a jednu kategorii
-GET {{host}}/api/stock?clientIds=1&clientIds=3&categoryIds=1
-
-### Změna počtu kusů
-PUT {{host}}/api/stock/1/1
+### Změna počtu kusů -> 200 a řádek s verzí zvýšenou o 1
+PUT {{host}}/api/stock/1/2
 Content-Type: application/json
 
-{ "quantity": 42 }
+{ "quantity": 42, "version": 0 }
 
-### Neplatná změna (záporný počet) -> 400
-PUT {{host}}/api/stock/1/1
+### Stejný požadavek znovu se starou verzí -> 409 s currentQuantity a currentVersion
+PUT {{host}}/api/stock/1/2
 Content-Type: application/json
 
-{ "quantity": -5 }
+{ "quantity": 43, "version": 0 }
+
+### Záporný počet kusů -> 400 s českou chybou v errors.Quantity
+PUT {{host}}/api/stock/1/2
+Content-Type: application/json
+
+{ "quantity": -5, "version": 0 }
+
+### Produkt mimo sortiment klienta (Šampon u Kancelář Plus) -> 422
+PUT {{host}}/api/stock/1/20
+Content-Type: application/json
+
+{ "quantity": 1, "version": 0 }
+
+### Neexistující klient -> 404
+PUT {{host}}/api/stock/99999/2
+Content-Type: application/json
+
+{ "quantity": 1, "version": 0 }

@@ -8,7 +8,9 @@ namespace MedorSklad.Controllers;
 [Route("api/filters")]
 public class FiltersController(StockService stockService) : ControllerBase
 {
-    /// <summary>Klienti, kategorie a produkty pro menu s filtrem.</summary>
+    /// <summary>Klienti, kategorie a produkty pro menu s filtrem, i s vazbami na kategorie.</summary>
     [HttpGet]
-    public Task<FilterOptions> Get(CancellationToken ct) => stockService.GetFilterOptionsAsync(ct);
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<FilterOptions>> Get(CancellationToken ct) =>
+        await stockService.GetFilterOptionsAsync(ct);
 }

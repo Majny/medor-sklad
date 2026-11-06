@@ -9,38 +9,65 @@ namespace MedorSklad.Controllers;
 public class StockController(StockService stockService) : ControllerBase
 {
     /// <summary>
-    /// Řádky gridu. Příklad: GET /api/stock?clientIds=1&amp;clientIds=3&amp;categoryIds=2
-    /// Nevyplněný parametr = bez omezení.
+    /// Řádky gridu. Příklad: GET /api/stock?clientIds=1&amp;clientIds=3&amp;categoryIds=2&amp;onlyOutOfStock=true
+    /// Nevyplněný parametr znamená bez omezení, skupiny se kombinují přes AND.
     /// </summary>
     [HttpGet]
+    [ProducesResponseType<IReadOnlyList<StockRow>>(StatusCodes.Status200OK)]
     public Task<IReadOnlyList<StockRow>> Get(
         [FromQuery] int[]? clientIds,
         [FromQuery] int[]? categoryIds,
         [FromQuery] int[]? productIds,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] bool onlyOutOfStock = false)
     {
-        var filter = new StockFilter(clientIds ?? [], categoryIds ?? [], productIds ?? []);
+        var filter = new StockFilter(clientIds ?? [], categoryIds ?? [], productIds ?? [], onlyOutOfStock);
         return stockService.GetStockAsync(filter, ct);
     }
 
     /// <summary>
-    /// Nastaví počet kusů produktu na skladu klienta.
-    /// Validaci těla (povinné, nezáporné) řeší [ApiController] přes DataAnnotations na DTO.
+    /// Nastaví počet kusů produktu na skladu klienta. Tělo nese i verzi řádku, kterou klient
+    /// naposledy viděl; pokud se mezitím změnila, vrací 409 s aktuální hodnotou.
+    /// Validaci těla řeší [ApiController] přes DataAnnotations na DTO.
     /// </summary>
     [HttpPut("{clientId:int}/{productId:int}")]
-    public async Task<IActionResult> UpdateQuantity(int clientId, int productId, UpdateQuantityRequest request, CancellationToken ct)
+    [ProducesResponseType<StockRow>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<StockRow>> UpdateQuantity(
+        int clientId, int productId, UpdateQuantityRequest request, CancellationToken ct)
     {
-        var result = await stockService.UpdateQuantityAsync(clientId, productId, request.Quantity!.Value, ct);
+        var result = await stockService.UpdateQuantityAsync(
+            clientId, productId, request.Quantity!.Value, request.Version!.Value, ct);
+
         return result switch
         {
-            UpdateStockResult.Updated => NoContent(),
-            UpdateStockResult.ClientOrProductNotFound => Problem(
+            UpdateStockResult.Updated u => Ok(u.Row),
+            UpdateStockResult.NotFound => Problem(
                 statusCode: StatusCodes.Status404NotFound,
+                title: "Nenalezeno",
                 detail: "Klient nebo produkt neexistuje."),
-            UpdateStockResult.ProductNotInClientAssortment => Problem(
-                statusCode: StatusCodes.Status400BadRequest,
+            UpdateStockResult.NotInAssortment => Problem(
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                title: "Produkt mimo sortiment",
                 detail: "Produkt nepatří do žádné kategorie, kterou má klient přidělenou."),
+            UpdateStockResult.Conflict c => ConflictProblem(c),
             _ => throw new InvalidOperationException($"Neznámý výsledek {result}."),
         };
+    }
+
+    /// <summary>409 jako ProblemDetails s aktuálním stavem řádku, aby klient mohl nabídnout řešení.</summary>
+    private ObjectResult ConflictProblem(UpdateStockResult.Conflict conflict)
+    {
+        var problem = ProblemDetailsFactory.CreateProblemDetails(
+            HttpContext,
+            StatusCodes.Status409Conflict,
+            title: "Konflikt souběžné úpravy",
+            detail: "Počet kusů mezitím změnil někdo jiný.");
+        problem.Extensions["currentQuantity"] = conflict.CurrentQuantity;
+        problem.Extensions["currentVersion"] = conflict.CurrentVersion;
+        return Conflict(problem);
     }
 }

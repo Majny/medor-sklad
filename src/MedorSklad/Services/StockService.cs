@@ -5,108 +5,120 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MedorSklad.Services;
 
-public enum UpdateStockResult
-{
-    Updated,
-    ClientOrProductNotFound,
-    ProductNotInClientAssortment,
-}
-
 /// <summary>
 /// Doménová logika skladu. Sortiment klienta tvoří všechny produkty z kategorií,
 /// které má klient přidělené. Řádek gridu = jeden produkt na skladu jednoho klienta.
 /// </summary>
-public class StockService(WarehouseDbContext db)
+public class StockService(WarehouseDbContext db, ILogger<StockService> logger)
 {
     /// <summary>Řazení podle české abecedy nezávisle na jazyku serveru (SQLite umí jen binární řazení).</summary>
     private static readonly StringComparer CzechOrder = StringComparer.Create(new CultureInfo("cs-CZ"), ignoreCase: true);
 
     public async Task<FilterOptions> GetFilterOptionsAsync(CancellationToken ct = default)
     {
-        var clients = await db.Clients.Select(c => new LookupItem(c.Id, c.Name)).ToListAsync(ct);
-        var categories = await db.Categories.Select(c => new LookupItem(c.Id, c.Name)).ToListAsync(ct);
-        var products = await db.Products.Select(p => new LookupItem(p.Id, p.Name)).ToListAsync(ct);
-        return new FilterOptions(SortByName(clients), SortByName(categories), SortByName(products));
-    }
+        var clients = await db.Clients
+            .Select(c => new ClientOption(c.Id, c.Name, c.Categories.Select(x => x.Id).ToList()))
+            .ToListAsync(ct);
+        var categories = await db.Categories
+            .Select(c => new LookupItem(c.Id, c.Name))
+            .ToListAsync(ct);
+        var products = await db.Products
+            .Select(p => new ProductOption(p.Id, p.Name, p.Categories.Select(x => x.Id).ToList()))
+            .ToListAsync(ct);
 
-    private static List<LookupItem> SortByName(IEnumerable<LookupItem> items) =>
-        items.OrderBy(i => i.Name, CzechOrder).ToList();
+        return new FilterOptions(
+            clients.OrderBy(c => c.Name, CzechOrder).ToList(),
+            categories.OrderBy(c => c.Name, CzechOrder).ToList(),
+            products.OrderBy(p => p.Name, CzechOrder).ToList());
+    }
 
     public async Task<IReadOnlyList<StockRow>> GetStockAsync(StockFilter filter, CancellationToken ct = default)
     {
-        var clientIds = filter.ClientIds;
-        var categoryIds = filter.CategoryIds;
-        var productIds = filter.ProductIds;
+        // Jen řádky, jejichž produkt je v sortimentu klienta. Řádky kategorie, kterou klient
+        // ztratil, v databázi zůstávají, ale v gridu se nezobrazí.
+        var query = db.StockItems.Where(s => s.Client.Categories.Any(cat => cat.Products.Any(p => p.Id == s.ProductId)));
 
-        // Všechny trojice (klient, kategorie klienta, produkt v té kategorii) i s počtem kusů.
-        var assortment = db.Clients.AsNoTracking()
-            .SelectMany(client => client.Categories, (client, category) => new { client, category })
-            .SelectMany(x => x.category.Products, (x, product) => new
-            {
-                ClientId = x.client.Id,
-                ClientName = x.client.Name,
-                CategoryName = x.category.Name,
-                ProductId = product.Id,
-                ProductName = product.Name,
-                Quantity = db.StockItems
-                    .Where(s => s.ClientId == x.client.Id && s.ProductId == product.Id)
-                    .Select(s => (int?)s.Quantity)
-                    .FirstOrDefault() ?? 0,
-            });
+        if (filter.ClientIds.Count > 0)
+            query = query.Where(s => filter.ClientIds.Contains(s.ClientId));
+        if (filter.ProductIds.Count > 0)
+            query = query.Where(s => filter.ProductIds.Contains(s.ProductId));
 
-        if (clientIds.Count > 0)
-            assortment = assortment.Where(a => clientIds.Contains(a.ClientId));
-        if (productIds.Count > 0)
-            assortment = assortment.Where(a => productIds.Contains(a.ProductId));
+        // Řádek zůstane, pokud produkt patří aspoň do jedné vybrané kategorie, kterou klient má.
+        if (filter.CategoryIds.Count > 0)
+            query = query.Where(s => s.Product.Categories.Any(cat =>
+                filter.CategoryIds.Contains(cat.Id) && cat.Clients.Any(cl => cl.Id == s.ClientId)));
+        if (filter.OnlyOutOfStock)
+            query = query.Where(s => s.Quantity == 0);
 
-        // Filtr kategorií vybírá produkty: řádek zůstane, pokud produkt u klienta spadá
-        // aspoň do jedné vybrané kategorie. Ve sloupci kategorií se ale ukážou všechny
-        // kategorie produktu, kterými se klient zabývá, aby řádek nebyl zavádějící.
-        if (categoryIds.Count > 0)
-            assortment = assortment.Where(a => db.Clients.Any(c =>
-                c.Id == a.ClientId &&
-                c.Categories.Any(cat => categoryIds.Contains(cat.Id) && cat.Products.Any(p => p.Id == a.ProductId))));
+        // Projekce do DTO se nesleduje, proto tu není AsNoTracking. Categories je zatím prázdné, doplní se níže.
+        var rows = await query
+            .Select(s => new StockRow(s.ClientId, s.Client.Name, s.ProductId, s.Product.Name, new List<string>(), s.Quantity, s.Version))
+            .ToListAsync(ct);
 
-        var triples = await assortment.ToListAsync(ct);
+        // Kategorie řádků načteme druhým dotazem. Vnořenou kolekci závislou na klientovi řádku
+        // by EF přeložil jen přes SQL APPLY, který SQLite nepodporuje.
+        var clientIds = rows.Select(r => r.ClientId).Distinct().ToList();
+        var productIds = rows.Select(r => r.ProductId).Distinct().ToList();
+        var categoryNames = (await db.Clients
+                .Where(c => clientIds.Contains(c.Id))
+                .SelectMany(c => c.Categories, (c, cat) => new { ClientId = c.Id, Category = cat })
+                .SelectMany(x => x.Category.Products.Where(p => productIds.Contains(p.Id)),
+                    (x, p) => new { x.ClientId, ProductId = p.Id, x.Category.Name })
+                .ToListAsync(ct))
+            .ToLookup(t => (t.ClientId, t.ProductId), t => t.Name);
 
-        // Seskupení na řádky gridu (klient × produkt) a české řazení až v paměti.
-        return triples
-            .GroupBy(t => new { t.ClientId, t.ClientName, t.ProductId, t.ProductName, t.Quantity })
-            .Select(g => new StockRow(
-                g.Key.ClientId,
-                g.Key.ClientName,
-                g.Key.ProductId,
-                g.Key.ProductName,
-                g.Select(t => t.CategoryName).Distinct().Order(CzechOrder).ToList(),
-                g.Key.Quantity))
+        // České řazení až v paměti, řádků je málo.
+        return rows
+            .Select(r => r with { Categories = categoryNames[(r.ClientId, r.ProductId)].Order(CzechOrder).ToList() })
             .OrderBy(r => r.ClientName, CzechOrder)
             .ThenBy(r => r.ProductName, CzechOrder)
             .ToList();
     }
 
-    public async Task<UpdateStockResult> UpdateQuantityAsync(int clientId, int productId, int quantity, CancellationToken ct = default)
+    public async Task<UpdateStockResult> UpdateQuantityAsync(
+        int clientId, int productId, int quantity, int expectedVersion, CancellationToken ct = default)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(quantity);
-
         var clientExists = await db.Clients.AnyAsync(c => c.Id == clientId, ct);
         var productExists = await db.Products.AnyAsync(p => p.Id == productId, ct);
         if (!clientExists || !productExists)
-            return UpdateStockResult.ClientOrProductNotFound;
+            return new UpdateStockResult.NotFound();
 
         var inAssortment = await db.Clients
             .Where(c => c.Id == clientId)
             .SelectMany(c => c.Categories)
             .AnyAsync(cat => cat.Products.Any(p => p.Id == productId), ct);
         if (!inAssortment)
-            return UpdateStockResult.ProductNotInClientAssortment;
+            return new UpdateStockResult.NotInAssortment();
 
-        var item = await db.StockItems.FindAsync([clientId, productId], ct);
-        if (item is null)
-            db.StockItems.Add(new StockItem { ClientId = clientId, ProductId = productId, Quantity = quantity });
-        else
-            item.Quantity = quantity;
+        // Jeden SQL příkaz UPDATE ... WHERE Version = @expected. ExecuteUpdate obchází change tracker
+        // i jeho concurrency tokeny, proto je verze přímo v podmínce. Příkaz je atomický bez transakce
+        // a nikdy nevkládá nový řádek, takže souběžné požadavky nemůžou narazit na duplicitní klíč.
+        var updated = await db.StockItems
+            .Where(s => s.ClientId == clientId && s.ProductId == productId && s.Version == expectedVersion)
+            .ExecuteUpdateAsync(u => u
+                .SetProperty(s => s.Quantity, quantity)
+                .SetProperty(s => s.Version, s => s.Version + 1), ct);
 
-        await db.SaveChangesAsync(ct);
-        return UpdateStockResult.Updated;
+        if (updated == 1)
+        {
+            var row = (await GetStockAsync(new StockFilter([clientId], [], [productId]), ct)).Single();
+            logger.LogInformation("Stock {ClientId}/{ProductId} set to {Quantity} (v{Version})",
+                clientId, productId, row.Quantity, row.Version);
+            return new UpdateStockResult.Updated(row);
+        }
+
+        var current = await db.StockItems
+            .Where(s => s.ClientId == clientId && s.ProductId == productId)
+            .Select(s => new { s.Quantity, s.Version })
+            .FirstOrDefaultAsync(ct);
+
+        // Chybějící řádek by porušil invariant seedu (řádek pro celý sortiment). Bez administrace
+        // klientů a produktů nemůže nastat, takže ho hlásíme jako neexistující.
+        if (current is null)
+            return new UpdateStockResult.NotFound();
+
+        logger.LogWarning("Stock {ClientId}/{ProductId} conflict: expected v{Expected}, current v{Current}",
+            clientId, productId, expectedVersion, current.Version);
+        return new UpdateStockResult.Conflict(current.Quantity, current.Version);
     }
 }

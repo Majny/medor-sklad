@@ -36,6 +36,12 @@ public class StockItem
     public int ProductId { get; set; }
     public int Quantity { get; set; }
 
+    /// <summary>
+    /// Verze řádku pro optimistickou souběžnost. Zvyšuje ji aplikace při každé změně,
+    /// protože SQLite nemá rowversion. Na MS SQL by to byl sloupec s atributem [Timestamp].
+    /// </summary>
+    public int Version { get; set; }
+
     public Client Client { get; set; } = null!;
     public Product Product { get; set; } = null!;
 }
