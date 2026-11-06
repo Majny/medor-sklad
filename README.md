@@ -133,8 +133,27 @@ tests/MedorSklad.Tests/
 
 ## Kolik času mi to zabralo
 
-> DOPLNIT (Jakub): skutečné časy, rozdělené na v1 a v2 a podle fází.
+Celkem zhruba 2 až 3 hodiny mé práce. Kód z velké části psali agenti v Claude Code, můj čas šel hlavně do zadání, rozhodování a kontroly.
+
+- **v1** (základ, který splňuje zadání): vygenerovaná asi za 15 minut, pak jsem ji prošel a spustil.
+- **v2** (lepší filtr, editace z klávesnice, ochrana proti souběžné úpravě, README): návrh agenti připravili zhruba za 8 minut, implementaci a review zhruba za 31 minut.
+- **Vyladění UI a bezpečnostní review**: dvě další kola nad hotovou verzí.
+- Zbytek času jsem strávil procházením kódu, zkoušením v prohlížeči a rozhodováním, co z návrhů vzít.
 
 ## Jak jsem pracoval s AI
 
-> DOPLNIT (Jakub): nástroje, co jsem delegoval a co rozhodl sám, jak jsem výsledky ověřoval, co jsem z návrhů odmítl a jaké chyby AI udělala.
+**Nástroje:** Claude Code (Claude Opus) a v něm workflow s více agenty běžícími paralelně.
+
+**Co jsem delegoval:** psaní backendu, frontendu a testů, rešerši open-source vzorů pro .NET a EF Core a review kódu. Review dělalo několik agentů s různými úhly pohledu (správnost, frontend, shoda se zadáním, pohled hodnotitele) a ke každému nálezu skeptik, který se ho snažil vyvrátit. Opravovalo se jen to, co obstálo.
+
+**Co jsem rozhodl sám:** zadání pro agenty, rozsah (žádné přihlašování, žádný Docker), co z návrhů vzít, kdy je UI hotové a že se před odevzdáním udělá ještě bezpečnostní review.
+
+**Co jsem z návrhů odmítl:** nechal jsem zpracovat čtyři nezávislé varianty řešení. Blazor jsem nevzal, protože serverová varianta posílá data přes SignalR místo REST, které zadání chce. Gridovou knihovnu jsem nevzal, protože 4 sloupce a 3 filtry ji nepotřebují a přidala by závislost. Zvolil jsem nejjednodušší variantu: controllery, EF Core a čistý JavaScript bez build kroku.
+
+**Jak jsem výsledky ověřoval:** 48 testů (služba, REST API, migrace a seed, statické soubory, bezpečnostní hlavičky), build bez varování, sestavení z čistého klonu a proklikání scénářů v prohlížeči včetně konfliktu ze dvou záložek. Bezpečnost agenti testovali skutečnými útoky na běžící instanci (SQL injection, XSS v názvech, obří vstupy, cizí hlavička Host).
+
+**Chyby, které AI udělala** (zachytily je testy nebo review):
+
+- PUT bez `quantity` ve v1 tiše vynuloval sklad, protože chybějící číslo se načetlo jako 0. Teď vrací 400.
+- Validační atribut na špatném místě způsobil, že každý PUT vracel 500.
+- Dotaz gridu byl napsaný jako jeden vnořený dotaz, který EF Core na SQLite neumí přeložit. Je rozdělený na dva.
